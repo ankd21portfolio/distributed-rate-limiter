@@ -8,6 +8,7 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 
 @Component
 @Order(-1) // Ensure this filter runs before other filters
@@ -51,9 +52,4 @@ public class RateLimiterFilter implements WebFilter {
 
     }
 
-    @Override
-    public int getOrder() {
-        // Setting highest priority so rate limiting runs before routing or authentication filters cost resource overhead
-        return Ordered.HIGHEST_PRECEDENCE;
-    }
 }

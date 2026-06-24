@@ -1,12 +1,14 @@
 package com.platform.ratelimiter.model;
 
-public class RateLimitResult {
+public class RateLimitResponse {
     private final boolean allowed;
     private final long remainingTokens;
+    private final String message;
 
-    public RateLimitResult(boolean allowed, long remainingTokens) {
+    public RateLimitResponse(boolean allowed, long remainingTokens) {
         this.allowed = allowed;
         this.remainingTokens = remainingTokens;
+        this.message = allowed ? "Rate limit allowed." : "Rate limit exceeded. Please try again later.";
     }
 
     public boolean isAllowed() {
@@ -17,11 +19,16 @@ public class RateLimitResult {
         return remainingTokens;
     }
 
+    public String getMessage() {
+        return message;
+    }
+
     @Override
     public String toString() {
-        return "RateLimitResult{" +
+        return "RateLimitResponse{" +
                 "allowed=" + allowed +
                 ", remainingTokens=" + remainingTokens +
+                ", message='" + message + '\'' +
                 '}';
     }
 }
