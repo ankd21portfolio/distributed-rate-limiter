@@ -8,18 +8,22 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import com.platform.ratelimiter.service.RateLimiterService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 @Order(-1) // Ensure this filter runs before other filters
+@RequiredArgsConstructor
 public class RateLimiterFilter implements WebFilter {
+    
+    @Value("${rate-limiter.capacity}")
+    private long capacity;
 
-    private final ReactiveStringRedisTemplate redisTemplate;
+    @Value("${rate-limiter.refill-rate}")
+    private double refillRate;
 
-    // Constructor injection for our non-blocking Redis template
-    public RateLimiterFilter(ReactiveStringRedisTemplate redisTemplate) {
-        this.redisTemplate = redisTemplate;
-    }
+    private final RateLimiterService rateLimiterService;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -33,23 +37,22 @@ public class RateLimiterFilter implements WebFilter {
 
         }
 
-        // 2. Formulate our unique state tracking key for Redis
         String redisKey = "rate_limit:" + clientId;
 
-        // 3. Temporary Architectural Placeholder
-        // Right now, we automatically approve everything so we can trace the pipeline layout.
-        // In our next block, this hardcoded true transforms into our atomic Lua script call.
-        boolean isAllowed = true; // Placeholder for Redis-based rate limit check
-        if(isAllowed) {
-            // If allowed, continue processing the request
-            return chain.filter(exchange);
-        } else {
-            // If not allowed, respond with 429 Too Many Requests
-            exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
-            return exchange.getResponse().setComplete();
-        }
-        ////////////////
+        return rateLimiterService.checkRateLimit(redisKey, capacity, refillRate)
+                        .flatMap(result -> {
+                            boolean isAllowed = result.get(0) == 1L;
+                            long remainingTokens = result.get(1);
+                            exchange.getResponse().getHeaders().add("X-RateLimit-Remaining", String.valueOf(remainingTokens));
 
+                            if(isAllowed) {
+                                return chain.filter(exchange);
+                            }
+
+                            //error
+                            exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+                            return exchange.getResponse().setComplete();
+                        });
     }
 
 }
