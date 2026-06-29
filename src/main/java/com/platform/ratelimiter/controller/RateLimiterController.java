@@ -29,4 +29,10 @@ public class RateLimiterController {
                     }
                 });
     }
+
+    
+    @GetMapping("/health")
+    public Mono<ResponseEntity<String>> health() {
+        return Mono.just(ResponseEntity.ok("UP"));
+    }
 }

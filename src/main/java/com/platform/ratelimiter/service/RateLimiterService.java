@@ -23,6 +23,11 @@ public class RateLimiterService {
             String.valueOf(refillRate)   // refillRate as String
         );
 
+        // Use the injected Lua script bean
+        // send KEYS and ARGV to Redis
+        // run the script
+        // take the first result
+        // return Mono<List<Long>>
         return redisTemplate.execute(rateLimiterScript, keys, args).next();
     }
 }
