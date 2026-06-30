@@ -104,7 +104,22 @@ Lua must stay tiny: read hash, arithmetic, update hash, return result.
 No heavy loops or long-running logic because Redis is single-threaded per command execution.
 ```
 
-## 6. Reactive Redis Wiring
+## 6.1 M4 Fail-Open Fallback
+
+If Redis fails, we do not reject traffic at the gateway. The service returns `Mono.just(List.of(1L, -1L))` in the reactive fallback.
+
+- `Mono.just(...)` creates the reactive fallback value immediately.
+- `1L` means allow the request.
+- `-1` is a sentinel for “Redis unavailable, bypass mode” instead of a real token count.
+- This keeps the filter logic unchanged and preserves availability when the datastore is down.
+
+CAP theorem note:
+
+- We choose Availability over Consistency for this gateway path.
+- In a transient Redis outage, failing open avoids a hard service outage even though some requests may bypass rate limits.
+- That is the AP trade-off in a distributed system: keep the service responsive, accept weaker rate-limit consistency.
+
+## 7. Reactive Redis Wiring
 
 `RateLimiterService` asks for:
 

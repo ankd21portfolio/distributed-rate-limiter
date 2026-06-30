@@ -5,6 +5,8 @@ import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -12,6 +14,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RateLimiterService {
 
+    private static final Logger log = LoggerFactory.getLogger(RateLimiterService.class);
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final RedisScript<List<Long>> rateLimiterScript;
 
@@ -28,6 +31,12 @@ public class RateLimiterService {
         // run the script
         // take the first result
         // return Mono<List<Long>>
-        return redisTemplate.execute(rateLimiterScript, keys, args).next();
+        return redisTemplate.execute(rateLimiterScript, keys, args).next()
+                .onErrorResume(exception -> 
+                                    {
+                                        log.error("Redis rate limiter failed, failing open", exception);
+                                        return Mono.just(List.of(1L,-1L));
+                                    }
+                                );
     }
 }
