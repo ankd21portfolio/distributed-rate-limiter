@@ -11,5 +11,7 @@ spring:
 rate-limiter:
   capacity: 3
   refill-rate: 0.0005
+  window-length: 10000
+  algorithm: SLIDING_WINDOW
 
 

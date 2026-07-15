@@ -14,21 +14,22 @@ import reactor.core.publisher.Mono;
 public class RateLimiterController {
     private final RateLimiterService rateLimiterService;
 
-    @PostMapping("/check-limit")
-    public Mono<ResponseEntity<RateLimitResponse>> checkRateLimit(@RequestBody RateLimitRequest request) {
-        return rateLimiterService.checkRateLimit(request.getClientId(), request.getCapacity(), request.getRefillRate())
-                .map(result -> {
-                    boolean isAllowed = result.get(0) == 1L;
-                    long remainingTokens = result.get(1);
-                    RateLimitResponse response = new RateLimitResponse(isAllowed, remainingTokens);
+    // Deprecated 
+    // @PostMapping("/check-limit")
+    // public Mono<ResponseEntity<RateLimitResponse>> checkRateLimit(@RequestBody RateLimitRequest request) {
+    //     return rateLimiterService.checkRateLimit(request.getClientId(), request.getCapacity(), request.getRefillRate())
+    //             .map(result -> {
+    //                 boolean isAllowed = result.get(0) == 1L;
+    //                 long remainingTokens = result.get(1);
+    //                 RateLimitResponse response = new RateLimitResponse(isAllowed, remainingTokens);
                     
-                    if(isAllowed) {
-                        return ResponseEntity.ok().header("X-RateLimit-Remaining", String.valueOf(remainingTokens)).body(response);
-                    } else {
-                        return ResponseEntity.status(429).header("X-RateLimit-Remaining", String.valueOf(remainingTokens)).body(response);
-                    }
-                });
-    }
+    //                 if(isAllowed) {
+    //                     return ResponseEntity.ok().header("X-RateLimit-Remaining", String.valueOf(remainingTokens)).body(response);
+    //                 } else {
+    //                     return ResponseEntity.status(429).header("X-RateLimit-Remaining", String.valueOf(remainingTokens)).body(response);
+    //                 }
+    //             });
+    // }
 
     
     @GetMapping("/health")

@@ -1,5 +1,7 @@
 package com.platform.ratelimiter.filter;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -23,8 +25,12 @@ public class RateLimiterFilter implements WebFilter {
     @Value("${rate-limiter.refill-rate}")
     private double refillRate;
 
+    @Value("${rate-limiter.window-length}")
+    private long windowLength;
+
     private final RateLimiterService rateLimiterService;
 
+    private static final Logger log = LoggerFactory.getLogger(RateLimiterFilter.class);
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
@@ -36,10 +42,9 @@ public class RateLimiterFilter implements WebFilter {
                         request.getRemoteAddress().getAddress().getHostAddress() : "anonymous";
 
         }
+        log.info("Incoming request: {} Client ID: {}", request.getPath(), clientId);
 
-        String redisKey = "rate_limit:" + clientId;
-
-        return rateLimiterService.checkRateLimit(redisKey, capacity, refillRate)
+        return rateLimiterService.checkRateLimit(clientId, capacity, refillRate, windowLength)
                         .flatMap(result -> {
                             boolean isAllowed = result.get(0) == 1L;
                             long remainingTokens = result.get(1);

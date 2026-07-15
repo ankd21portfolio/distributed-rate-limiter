@@ -1,186 +1,242 @@
 # Distributed Rate Limiter
 
-A Redis-backed, non-blocking rate limiter built with Spring Boot WebFlux. The project uses a token bucket algorithm implemented as a Lua script so each rate-limit check is executed atomically inside Redis.
+A distributed rate limiter built with Java 21, Spring Boot WebFlux, Redis, and Lua scripting.
 
-## What This Project Demonstrates
+The project demonstrates how to enforce request quotas consistently across multiple application instances by externalizing rate-limit state to Redis and executing rate-limit decisions atomically using Redis Lua scripts.
 
-- Global request interception with Spring WebFlux `WebFilter`
-- Non-blocking Redis access through `ReactiveRedisTemplate`
-- Atomic token bucket updates with Redis Lua scripting
-- Config-driven capacity and refill rate
-- HTTP `429 Too Many Requests` rejection at the filter layer
-- Manual rate-limit check endpoint for debugging and verification
+Currently implemented algorithms:
+
+- Token Bucket
+- Sliding Window (Redis Sorted Sets)
+
+---
+
+## Motivation
+
+A rate limiter implemented with in-memory data structures works only for a single application instance.
+
+```text
+           Load Balancer
+          /             \
+     Instance A      Instance B
+     tokens = 3      tokens = 3
+```
+
+A client can bypass the intended limit simply because requests are distributed across different JVMs.
+
+This project externalizes the rate-limit state into Redis so every application instance shares the same source of truth.
+
+```text
+          Load Balancer
+          /            \
+     Instance A    Instance B
+            \        /
+             \      /
+              Redis
+```
+
+Regardless of which instance receives the request, the same Redis state is updated atomically.
+
+---
+
+## Features
+
+- Spring WebFlux `WebFilter` for global request interception
+- Reactive Redis integration using `ReactiveRedisTemplate`
+- Redis Lua scripting for atomic rate-limit decisions
+- Configurable algorithm selection
+    - Token Bucket
+    - Sliding Window
+- HTTP `429 Too Many Requests`
+- `X-RateLimit-Remaining` response header
+- Fail-open strategy when Redis is unavailable
+- Integration tests using Testcontainers
+
+---
 
 ## Tech Stack
 
 - Java 21
 - Spring Boot 3.5.x
 - Spring WebFlux
+- Reactor
 - Spring Data Redis Reactive
 - Redis
 - Lua
 - Gradle
-- Lombok
+- Testcontainers
+- JUnit 5
+
+---
 
 ## Architecture
 
 ```text
-Incoming HTTP request
-        ↓
+HTTP Request
+      │
+      ▼
 RateLimiterFilter
-        ↓
-Extract X-API-KEY header or fallback IP
-        ↓
-RateLimiterService.checkRateLimit(...)
-        ↓
-ReactiveRedisTemplate.execute(luaScript, keys, args)
-        ↓
-Redis runs token bucket Lua script atomically
-        ↓
-Lua returns [allowed, remainingTokens]
-        ↓
-Filter either continues request or returns 429
+      │
+Extract Client Identifier
+(X-API-KEY or Remote IP)
+      │
+      ▼
+RateLimiterService
+      │
+      ▼
+ReactiveRedisTemplate
+      │
+      ▼
+Redis Lua Script
+(Token Bucket / Sliding Window)
+      │
+      ▼
+Decision:
+Allow or Reject
+      │
+      ├──► Continue request
+      └──► HTTP 429
 ```
 
-## Core Components
+---
 
-### `RateLimiterFilter`
+## Algorithms
 
-The production enforcement layer. It runs for incoming WebFlux requests, builds a Redis key from `X-API-KEY` or remote IP, calls the rate limiter service, and either:
+### Token Bucket
 
-- allows the request to continue with `chain.filter(exchange)`
-- rejects the request with `HTTP 429`
+Each client owns a bucket with a maximum capacity.
 
-It also adds:
+Tokens are replenished continuously based on the configured refill rate.
 
-```text
-X-RateLimit-Remaining
-```
+Advantages:
 
-### `RateLimiterService`
+- Smooth average request rate
+- Efficient memory usage
+- Simple implementation
 
-The Redis execution layer. It prepares `KEYS` and `ARGV`, then executes the Lua script reactively:
+Trade-off:
 
-```java
-redisTemplate.execute(rateLimiterScript, keys, args).next()
-```
+After a long idle period, a client can accumulate tokens and send a burst of requests.
 
-### `RateLimiterConfig`
+---
 
-Loads the Lua script from:
+### Sliding Window
 
-```text
-src/main/resources/scripts/rate_limiter.lua
-```
+Each request timestamp is stored inside a Redis Sorted Set.
 
-and registers it as a Spring `RedisScript<List<Long>>` bean.
+For every incoming request:
 
-### `RateLimiterController`
+1. Remove expired timestamps.
+2. Count requests still inside the window.
+3. Reject if capacity has been reached.
+4. Otherwise add the new timestamp.
 
-Provides two endpoints:
+Advantages:
 
-```text
-POST /api/v1/check-limit
-GET  /api/v1/health
-```
+- Fairer request distribution
+- Eliminates burst accumulation
 
-`/check-limit` is useful for manually calling the service. `/health` is useful for testing filter-level enforcement because the endpoint itself does not call the rate limiter service.
+Trade-offs:
+
+- Higher Redis memory usage
+- Additional Sorted Set operations
+
+---
+
+## Why Lua?
+
+Each rate-limit decision requires multiple Redis operations:
+
+- Read state
+- Compute new state
+- Update Redis
+- Return result
+
+Without Lua, concurrent application instances could interleave these operations and violate the rate limit.
+
+Redis executes each Lua script atomically, ensuring the entire decision behaves as a single operation.
+
+---
+
+## Failure Strategy
+
+If Redis becomes unavailable, the application intentionally fails open.
+
+Instead of rejecting all traffic, requests continue while the limiter reports a sentinel value for the remaining quota.
+
+This prioritizes service availability over strict rate-limit enforcement during transient Redis outages.
+
+---
 
 ## Configuration
 
-`src/main/resources/application.yaml`
-
 ```yaml
-spring:
-  application:
-    name: ratelimiter
-
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      timeout: 2000ms
-
 rate-limiter:
+  algorithm: TOKEN_BUCKET
   capacity: 3
   refill-rate: 0.0005
+  window-length: 10000
 ```
 
-The refill rate is tokens per millisecond.
+Changing the algorithm requires only a configuration update.
 
-```text
-0.0005 tokens/ms = 0.5 tokens/sec = 1 token every 2 seconds
-```
+---
 
-## Running Locally
+## Running
 
-Start Redis:
+Start Redis
 
 ```bash
 docker run --name redis-rate-limiter -p 6379:6379 redis:latest
 ```
 
-If the container already exists:
-
-```bash
-docker start redis-rate-limiter
-```
-
-Run the app:
+Run the application
 
 ```bash
 ./gradlew bootRun
 ```
 
-## Manual Filter Test
+---
 
-Use the health endpoint so the request is rate-limited only by the filter:
+## Manual Verification
+
+Example:
 
 ```bash
-curl -i -H "X-API-KEY: user1" http://localhost:8080/api/v1/health
+curl -i \
+-H "X-API-KEY: user1" \
+http://localhost:8080/api/v1/health
 ```
 
-With `capacity: 3` and quick repeated requests, expected behavior:
+Expected:
 
 ```text
-1st request → 200 OK, X-RateLimit-Remaining: 2
-2nd request → 200 OK, X-RateLimit-Remaining: 1
-3rd request → 200 OK, X-RateLimit-Remaining: 0
-4th request → 429 Too Many Requests, X-RateLimit-Remaining: 0
+200
+200
+200
+429
 ```
 
-`200 OK` with `X-RateLimit-Remaining: 0` is valid. It means the request consumed the final available token. The next immediate request should be rejected unless enough time has passed for refill.
-
-## Manual Service Test Endpoint
-
-```bash
-curl -i -X POST http://localhost:8080/api/v1/check-limit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "clientId": "user1",
-    "capacity": 3,
-    "refillRate": 0.0005
-  }'
-```
-
-Note: this endpoint is not ideal for filter-only testing because the global filter runs before the controller, and the controller also calls the rate limiter service.
-
-## Redis State Reset During Local Testing
-
-Redis stores token bucket state per client key:
+with
 
 ```text
-rate_limit:{clientId}
+X-RateLimit-Remaining
+
+2
+1
+0
+0
 ```
 
-Reset one test user:
+After the configured window (Sliding Window) or sufficient refill time (Token Bucket), requests are accepted again.
 
-```bash
-redis-cli DEL rate_limit:user1
-```
+---
 
-Clear all local Redis data:
+## Future Improvements
 
-```bash
-redis-cli FLUSHALL
-```
+- Use Redis `TIME` to eliminate application clock skew.
+- Generate collision-free Sorted Set members.
+- Return `Retry-After` response headers.
+- Add Micrometer and Prometheus metrics.
+- Docker Compose for local development.
+- GitHub Actions CI pipeline.
