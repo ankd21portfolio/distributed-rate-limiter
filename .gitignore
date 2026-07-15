@@ -39,3 +39,5 @@ out/
 ### Scratch files ###
 TokenBucket.java
 RedisVerificationConfig.java
+
+.DS_Store
