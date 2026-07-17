@@ -1,6 +1,7 @@
 package com.platform.ratelimiter.service;
 
 import com.platform.ratelimiter.common.RateLimitAlgorithm;
+import com.platform.ratelimiter.metrics.RateLimiterMetrics;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -10,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +21,7 @@ public class RateLimiterService {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final RedisScript<List<Long>> tokenBucketScript;
     private final RedisScript<List<Long>> slidingWindowScript;
+    private final RateLimiterMetrics metrics;
 
     @Value("${rate-limiter.algorithm}")
     private String rateLimitAlgo;
@@ -58,10 +61,15 @@ public class RateLimiterService {
         // run the script
         // take the first result
         // return Mono<List<Long>>
+        long startTime = System.nanoTime();
         return redisTemplate.execute(script, keys, args).next()
+                .doFinally(signalType ->
+                        metrics.redisExecutionTimer().record(System.nanoTime() - startTime, TimeUnit.NANOSECONDS)
+                )
                 .onErrorResume(exception -> 
                                     {
                                         log.error("Redis rate limiter failed, failing open", exception);
+                                        metrics.recordRedisFailOpen();
                                         return Mono.just(List.of(1L,-1L));
                                     }
                                 );

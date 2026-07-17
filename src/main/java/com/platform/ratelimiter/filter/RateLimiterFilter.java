@@ -1,5 +1,6 @@
 package com.platform.ratelimiter.filter;
 
+import com.platform.ratelimiter.metrics.RateLimiterMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
@@ -29,11 +30,17 @@ public class RateLimiterFilter implements WebFilter {
     private long windowLength;
 
     private final RateLimiterService rateLimiterService;
+    private final RateLimiterMetrics metrics;
 
     private static final Logger log = LoggerFactory.getLogger(RateLimiterFilter.class);
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
+        String path = request.getPath().value();
+
+        if (path.startsWith("/actuator")) {
+            return chain.filter(exchange);
+        }
 
         // 1. Extract Client Identifier (Production standard: fall back to IP if header is missing)
         String clientId = request.getHeaders().getFirst("X-API-KEY");
@@ -51,11 +58,13 @@ public class RateLimiterFilter implements WebFilter {
                             exchange.getResponse().getHeaders().add("X-RateLimit-Remaining", String.valueOf(remainingTokens));
 
                             if(isAllowed) {
+                                metrics.recordAllowed();
                                 return chain.filter(exchange);
                             }
 
                             //error
                             exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+                            metrics.recordRejected();
                             return exchange.getResponse().setComplete();
                         });
     }

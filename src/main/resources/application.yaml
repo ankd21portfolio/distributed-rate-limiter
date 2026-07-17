@@ -14,4 +14,12 @@ rate-limiter:
   window-length: 10000
   algorithm: SLIDING_WINDOW
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
 
+  endpoint:
+    health:
+      show-details: always
