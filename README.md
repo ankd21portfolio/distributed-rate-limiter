@@ -231,6 +231,49 @@ X-RateLimit-Remaining
 After the configured window (Sliding Window) or sufficient refill time (Token Bucket), requests are accepted again.
 
 ---
+## Monitoring
+
+The application is instrumented using Micrometer for metrics collection.
+
+Spring Boot Actuator exposes metrics through `/actuator/prometheus`.
+
+Prometheus periodically scrapes the metrics endpoint and stores time-series data.
+
+Grafana visualizes the collected metrics using Prometheus as the data source.
+
+### Exposed Metrics
+
+- `rate_limiter_requests_allowed_total`
+- `rate_limiter_requests_rejected_total`
+- `rate_limiter_redis_fail_open_total`
+- `rate_limiter_redis_execution_seconds`
+
+### Verification
+
+**Prometheus Target**
+
+Verified that Prometheus successfully scrapes the application.
+
+![img.png](img.png)
+
+**Prometheus Query**
+
+Verified custom Micrometer metrics are available in Prometheus.
+
+![docs/images/requests_allowed_total.png](docs/images/requests_allowed_total.png)
+
+![docs/images/redis_execution_seconds_max.png](docs/images/redis_execution_seconds_max.png)
+
+**Grafana Dashboard**
+
+Dashboard visualizing:
+
+- Allowed Requests
+- Rejected Requests
+- Redis Fail Open
+- Redis Lua Execution Latency
+
+![docs/images/Grafana.png](docs/images/Grafana.png)
 
 ## Future Improvements
 

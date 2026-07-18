@@ -9,9 +9,9 @@ spring:
       timeout: 2000ms
   
 rate-limiter:
-  capacity: 3
+  capacity: 5
+  window-length: 2000
   refill-rate: 0.0005
-  window-length: 10000
   algorithm: SLIDING_WINDOW
 
 management:
