@@ -254,7 +254,7 @@ Grafana visualizes the collected metrics using Prometheus as the data source.
 
 Verified that Prometheus successfully scrapes the application.
 
-![img.png](img.png)
+![docs/images/prometheus-status.png](docs/images/prometheus-status.png)
 
 **Prometheus Query**
 
